@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**Happenings Nearby** is a community-driven, real-time incident reporting mobile app. Users can view a 2D map of their surroundings with pinned incidents (accidents, police activity, fires, street performers, pop-up events, etc.), report new incidents, view details, comment (anonymously or authenticated), upvote, and share to Twitter/X.
+**Happenings Nearby** is a community-driven, real-time incident reporting mobile app. Users can view a 2D map of their surroundings with pinned incidents, report new incidents, view details, comment, upvote/downvote to verify, and manage their profile and trust score.
 
 The app is built with **Expo (SDK 54)** and **React Native**, using **Expo Router** for file-based navigation, **React Query** for server state, and a local Express server for API simulation.
 
@@ -21,7 +21,6 @@ The app is built with **Expo (SDK 54)** and **React Native**, using **Expo Route
 | Icons              | `lucide-react-native`                                          |
 | Styling            | React Native `StyleSheet` (dark theme, custom color tokens)    |
 | Package Manager    | Bun                                                            |
-| Web Compatibility  | `react-native-web` (runs in browser via Expo)                  |
 | Mock API           | Express.js (running on localhost:3000)                         |
 
 ---
@@ -31,65 +30,57 @@ The app is built with **Expo (SDK 54)** and **React Native**, using **Expo Route
 ```
 app/
   _layout.tsx           # Root layout: QueryClient, AuthProvider, IncidentsProvider, AuthGate, Stack
-  login.tsx             # Login / Register screen (email + password)
-  modal.tsx             # Generic modal route
-  +not-found.tsx        # 404 fallback
-  +native-intent.tsx    # Deep link handler
+  login.tsx             # Login / Register screen
   (tabs)/
-    _layout.tsx         # Tab bar: Map + Nearby feed
-    index.tsx           # Map tab — MapView with incident markers + ReportSheet
-    feed.tsx            # Nearby feed — scrollable list of IncidentCards
+    _layout.tsx         # Tab bar: Map, Nearby feed, Profile
+    index.tsx           # Map tab
+    feed.tsx            # Nearby feed
+    profile.tsx         # User profile and report history
   incident/
-    [id].tsx            # Incident detail — full info, comments, upvote, share to X
+    [id].tsx            # Incident detail, comments, voting, sharing
 
 components/
-  IncidentCard.tsx      # Card component for feed list items
-  MarkerPin.tsx         # Custom map marker with category emoji + color
-  ReportSheet.tsx       # Bottom sheet for creating a new incident report
+  IncidentCard.tsx      # Card for map marker overlays
+  IncidentRow.tsx       # Reusable row for Feed and Profile lists
+  MarkerPin.tsx         # Custom map marker
+  ReportSheet.tsx       # Incident reporting sheet
 
 constants/
-  categories.ts         # Category definitions (accident, police, fire, entertainment, etc.)
-  colors.ts             # Dark theme color tokens
+  categories.ts         # Category definitions
+  colors.ts             # Dark theme tokens
 
 context/
-  auth.tsx              # Auth context (login, register, logout, session restore via AsyncStorage)
-  incidents.tsx         # Incidents context (list, create, upvote via React Query)
+  auth.tsx              # Auth state and session persistence
+  incidents.tsx         # Incidents list and voting actions
 
 lib/api/
-  config.ts             # API_BASE_URL (defaults to localhost:3000)
-  client.ts             # Generic fetch wrapper with auth token injection
-  types.ts              # Shared TypeScript interfaces (User, Incident, Comment, payloads)
-  auth.ts               # Auth API calls (login, register, logout, getMe)
-  incidents.ts          # Incidents API calls (list, create, upvote, delete)
-  comments.ts           # Comments API calls (list, create)
+  users.ts              # User profile and history API calls
+  incidents.ts          # Incident list, create, upvote/downvote calls
+  comments.ts           # Comment retrieval and creation
+  types.ts              # Shared interfaces (User, Incident, etc.)
 
 server/
-  index.ts              # Mock Express server with in-memory store
+  index.ts              # Mock Express server with reputation logic
 ```
-
----
-
-## Environment Variables
-
-| Variable                | Description                                | Default                              |
-| ----------------------- | ------------------------------------------ | ------------------------------------ |
-| `EXPO_PUBLIC_API_URL`   | Base URL for the API                       | `http://localhost:3000`              |
-
-By default, the app points to `http://localhost:3000`. Run `bun server` to start the mock API.
 
 ---
 
 ## API Contract (Expected Backend Endpoints)
 
-All endpoints are prefixed with `EXPO_PUBLIC_API_URL`.
+All endpoints prefixed with `EXPO_PUBLIC_API_URL`.
 
 ### Auth
 | Method | Path              | Payload                            | Response         |
 | ------ | ----------------- | ---------------------------------- | ---------------- |
 | POST   | `/auth/login`     | `{ email, password }`              | `AuthResponse`   |
 | POST   | `/auth/register`  | `{ email, password, username }`    | `AuthResponse`   |
-| POST   | `/auth/logout`    | —                                  | —                |
 | GET    | `/auth/me`        | —                                  | `User`           |
+
+### Users
+| Method | Path                        | Payload                                       | Response      |
+| ------ | --------------------------- | --------------------------------------------- | ------------- |
+| GET    | `/users/:id`                | —                                             | `User`        |
+| GET    | `/users/:id/incidents`      | —                                             | `Incident[]`  |
 
 ### Incidents
 | Method | Path                        | Payload                                       | Response      |
@@ -97,61 +88,38 @@ All endpoints are prefixed with `EXPO_PUBLIC_API_URL`.
 | GET    | `/incidents`                | —                                             | `Incident[]`  |
 | POST   | `/incidents`                | `{ categoryId, description, lat, lng }`       | `Incident`    |
 | POST   | `/incidents/:id/upvote`     | —                                             | `Incident`    |
-| DELETE | `/incidents/:id`            | —                                             | —             |
+| POST   | `/incidents/:id/downvote`   | —                                             | `Incident`    |
 
 ### Comments
 | Method | Path                              | Payload                                  | Response    |
 | ------ | --------------------------------- | ---------------------------------------- | ----------- |
 | GET    | `/incidents/:id/comments`         | —                                        | `Comment[]` |
-| POST   | `/incidents/:id/comments`         | `{ incidentId, text, isAnonymous }`      | `Comment`   |
-
-Authorization: `Bearer <token>` header on all authenticated requests.
+| POST   | `/incidents/:id/comments`         | `{ text, isAnonymous }`                  | `Comment`   |
 
 ---
 
 ## Key Patterns & Conventions
 
-1. **Mock Express Server** — Instead of in-memory client-side mocks, the app uses a dedicated Express server (`server/index.ts`) to simulate the backend.
-
-2. **Context via `@nkzw/create-context-hook`** — Auth and Incidents state are exposed as `[Provider, useHook]` pairs, wrapped at the root layout.
-
-3. **React Query everywhere** — All fetches use `useQuery`, all mutations use `useMutation`. Optimistic cache updates via `queryClient.setQueryData`.
-
-4. **Dark theme** — All colors come from `constants/colors.ts`. The palette is a dark base (`#09090F`) with an emerald accent (`#34D399`) and category-specific colors.
-
-5. **Category system** — 8 categories (`accident`, `police`, `fight`, `fire`, `entertainment`, `event`, `hazard`, `roadblock`) defined in `constants/categories.ts` with emoji, label, and color.
-
-6. **Console logging** — Extensive `[Tag]` prefixed logs throughout API calls, auth flows, and state changes for debugging.
-
-7. **Web compatibility** — The app runs on React Native Web. Platform-specific APIs (like `expo-location`) are guarded.
+1. **Reputation System** — Users have a `trustScore`. Upvotes (+1) and Downvotes (-2) on their reports affect this score globally.
+2. **Reusable List Items** — Use `IncidentRow.tsx` for all scrollable incident lists (Feed, History) for UI consistency.
+3. **Optimistic Updates** — Always update the React Query cache immediately on voting or reporting.
+4. **Mock State** — `server/index.ts` simulates the database in-memory. Restarting the server resets all scores and reports.
 
 ---
 
 ## Running the App
 
 ```bash
-bun install
-bun server         # Start the mock Express API
-bun start          # Expo dev server (tunnel mode, scan QR)
-bun start-web      # Web preview
+bun server         # Start mock API
+bun start          # Start Expo
 ```
-
----
-
-## Switching to Production API
-
-1. Set `EXPO_PUBLIC_API_URL` to your deployed backend URL.
-2. Implement the endpoints listed in the API Contract above.
-3. No code changes needed — the API layer handles the switch automatically.
 
 ---
 
 ## Notes for AI Agents
 
-- Do NOT delete or refactor `<RootLayoutNav />` from `app/_layout.tsx`.
-- Use `bun` (never npm/yarn).
-- Prefer `StyleSheet` for all styling. No Tailwind, no styled-components.
-- Use `lucide-react-native` for icons.
-- When adding new API endpoints, implement them in both `lib/api/` (frontend) and `server/index.ts` (mock backend).
-- When adding new context, use `@nkzw/create-context-hook` and wrap at root layout inside `QueryClientProvider`.
-- Keep mock server in `server/`, constants in `constants/`, and API modules in `lib/api/`.
+- Follow the dark theme palette in `constants/colors.ts`.
+- Use `lucide-react-native` for all icons.
+- Implement both frontend API calls and mock backend logic for new features.
+- Adhere to the file-based routing structure in `app/`.
+- Never commit or stage changes unless asked.

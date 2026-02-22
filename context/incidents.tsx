@@ -6,6 +6,7 @@ import {
   getIncidentsApi,
   createIncidentApi,
   upvoteIncidentApi,
+  downvoteIncidentApi,
 } from '@/lib/api/incidents';
 
 export const [IncidentsProvider, useIncidents] = createContextHook(() => {
@@ -42,6 +43,16 @@ export const [IncidentsProvider, useIncidents] = createContextHook(() => {
     },
   });
 
+  const downvoteMutation = useMutation({
+    mutationFn: downvoteIncidentApi,
+    onSuccess: (updated) => {
+      queryClient.setQueryData<Incident[]>(['incidents'], (prev = []) =>
+        prev.map((i) => (i.id === updated.id ? updated : i))
+      );
+      console.log('[Incidents] Downvoted:', updated.id);
+    },
+  });
+
   const addIncident = useCallback(
     (data: CreateIncidentPayload) => createMutation.mutateAsync(data),
     [createMutation]
@@ -52,11 +63,17 @@ export const [IncidentsProvider, useIncidents] = createContextHook(() => {
     [upvoteMutation]
   );
 
+  const downvoteIncident = useCallback(
+    (id: string) => downvoteMutation.mutateAsync(id),
+    [downvoteMutation]
+  );
+
   return {
     incidents: incidentsQuery.data ?? [],
     isLoading: incidentsQuery.isLoading,
     isSubmitting: createMutation.isPending,
     addIncident,
     upvoteIncident,
+    downvoteIncident,
   };
 });

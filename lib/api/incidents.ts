@@ -19,6 +19,12 @@ export async function upvoteIncidentApi(id: string): Promise<Incident> {
   return { ...raw, timestamp: new Date(raw.timestamp) };
 }
 
+export async function downvoteIncidentApi(id: string): Promise<Incident> {
+  console.log('[Incidents API] POST /incidents/:id/downvote');
+  const raw = await apiClient.post<Omit<Incident, 'timestamp'> & { timestamp: string }>(`/incidents/${id}/downvote`);
+  return { ...raw, timestamp: new Date(raw.timestamp) };
+}
+
 export async function deleteIncidentApi(id: string): Promise<void> {
   console.log('[Incidents API] DELETE /incidents/:id');
   await apiClient.delete(`/incidents/${id}`);

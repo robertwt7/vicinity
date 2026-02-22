@@ -5,6 +5,7 @@ export interface User {
   email: string;
   username: string;
   avatar?: string;
+  trustScore: number;
 }
 
 export interface AuthResponse {
@@ -38,7 +39,9 @@ export interface Incident {
   longitude: number;
   timestamp: Date;
   reportedBy: string;
+  reportedById: string;
   upvotes: number;
+  downvotes: number;
 }
 
 export interface CreateIncidentPayload {

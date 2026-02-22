@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
   ThumbsUp,
+  ThumbsDown,
   Clock,
   MessageCircle,
   Send,
@@ -25,6 +26,7 @@ import {
   UserRound,
   EyeOff,
   MapPin,
+  Shield,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -32,8 +34,9 @@ import Colors from '@/constants/colors';
 import { getCategoryById } from '@/constants/categories';
 import { useIncidents } from '@/context/incidents';
 import { useAuth } from '@/context/auth';
-import { Comment } from '@/lib/api/types';
+import { Comment, User } from '@/lib/api/types';
 import { getCommentsApi, createCommentApi } from '@/lib/api/comments';
+import { getUserProfileApi } from '@/lib/api/users';
 
 function formatTimeAgo(date: Date): string {
   const diffMs = Date.now() - date.getTime();
@@ -106,7 +109,7 @@ export default function IncidentDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queryClient = useQueryClient();
-  const { incidents, upvoteIncident } = useIncidents();
+  const { incidents, upvoteIncident, downvoteIncident } = useIncidents();
   const { user, isAuthenticated } = useAuth();
 
   const incident = incidents.find((i) => i.id === id);
@@ -115,7 +118,8 @@ export default function IncidentDetailScreen() {
   const [commentText, setCommentText] = useState('');
   const [isAnonymous, setIsAnonymous] = useState(!isAuthenticated);
   const inputRef = useRef<TextInput>(null);
-  const buttonScale = useRef(new Animated.Value(1)).current;
+  const upvoteScale = useRef(new Animated.Value(1)).current;
+  const downvoteScale = useRef(new Animated.Value(1)).current;
   const heroFade = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -127,6 +131,12 @@ export default function IncidentDetailScreen() {
     queryFn: () => getCommentsApi(id ?? ''),
     enabled: !!id,
     staleTime: 15_000,
+  });
+
+  const reporterQuery = useQuery({
+    queryKey: ['user', incident?.reportedById],
+    queryFn: () => getUserProfileApi(incident!.reportedById),
+    enabled: !!incident?.reportedById,
   });
 
   const addCommentMutation = useMutation({
@@ -149,11 +159,21 @@ export default function IncidentDetailScreen() {
     if (!incident) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Animated.sequence([
-      Animated.spring(buttonScale, { toValue: 1.15, useNativeDriver: true, speed: 30 }),
-      Animated.spring(buttonScale, { toValue: 1, useNativeDriver: true, speed: 20 }),
+      Animated.spring(upvoteScale, { toValue: 1.15, useNativeDriver: true, speed: 30 }),
+      Animated.spring(upvoteScale, { toValue: 1, useNativeDriver: true, speed: 20 }),
     ]).start();
     upvoteIncident(incident.id);
-  }, [incident, buttonScale, upvoteIncident]);
+  }, [incident, upvoteScale, upvoteIncident]);
+
+  const handleDownvote = useCallback(() => {
+    if (!incident) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Animated.sequence([
+      Animated.spring(downvoteScale, { toValue: 1.15, useNativeDriver: true, speed: 30 }),
+      Animated.spring(downvoteScale, { toValue: 1, useNativeDriver: true, speed: 20 }),
+    ]).start();
+    downvoteIncident(incident.id);
+  }, [incident, downvoteScale, downvoteIncident]);
 
   const handleSubmitComment = useCallback(() => {
     if (!commentText.trim() || !id) return;
@@ -193,6 +213,7 @@ export default function IncidentDetailScreen() {
   }
 
   const comments = commentsQuery.data ?? [];
+  const reporter = reporterQuery.data;
 
   const renderHeader = () => (
     <Animated.View style={{ opacity: heroFade }}>
@@ -226,11 +247,17 @@ export default function IncidentDetailScreen() {
             <View style={styles.metaChip}>
               <UserRound color={Colors.textSub} size={12} strokeWidth={2} />
               <Text style={styles.metaChipText}>{incident.reportedBy}</Text>
+              {reporter && (
+                <View style={styles.trustBadge}>
+                  <Shield color={Colors.accent} size={10} strokeWidth={2.5} />
+                  <Text style={styles.trustText}>{reporter.trustScore}</Text>
+                </View>
+              )}
             </View>
           </View>
 
           <View style={styles.heroActions}>
-            <Animated.View style={{ transform: [{ scale: buttonScale }] }}>
+            <Animated.View style={{ transform: [{ scale: upvoteScale }], flex: 1 }}>
               <TouchableOpacity
                 style={styles.upvoteBtn}
                 onPress={handleUpvote}
@@ -238,7 +265,19 @@ export default function IncidentDetailScreen() {
                 testID="upvote-btn"
               >
                 <ThumbsUp color={Colors.accent} size={16} strokeWidth={2.5} />
-                <Text style={styles.upvoteText}>{incident.upvotes} Confirmed</Text>
+                <Text style={styles.upvoteText}>{incident.upvotes} Confirm</Text>
+              </TouchableOpacity>
+            </Animated.View>
+
+            <Animated.View style={{ transform: [{ scale: downvoteScale }], flex: 1 }}>
+              <TouchableOpacity
+                style={styles.downvoteBtn}
+                onPress={handleDownvote}
+                activeOpacity={0.8}
+                testID="downvote-btn"
+              >
+                <ThumbsDown color={Colors.error} size={16} strokeWidth={2.5} />
+                <Text style={styles.downvoteText}>{incident.downvotes} Deny</Text>
               </TouchableOpacity>
             </Animated.View>
 
@@ -249,7 +288,6 @@ export default function IncidentDetailScreen() {
               testID="share-twitter-btn"
             >
               <Share2 color="#1DA1F2" size={16} strokeWidth={2.5} />
-              <Text style={styles.shareBtnText}>Post to X</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -279,6 +317,356 @@ export default function IncidentDetailScreen() {
       )}
     </Animated.View>
   );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.bg,
+  },
+  navBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    backgroundColor: Colors.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  navTitle: {
+    flex: 1,
+    textAlign: 'center' as const,
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    letterSpacing: -0.3,
+    paddingHorizontal: 8,
+  },
+  listContent: {
+    paddingBottom: 16,
+  },
+  heroSection: {
+    overflow: 'hidden' as const,
+  },
+  categoryStrip: {
+    height: 3,
+  },
+  heroInner: {
+    padding: 20,
+    gap: 14,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  heroBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  heroBadgeEmoji: {
+    fontSize: 14,
+  },
+  heroBadgeLabel: {
+    fontSize: 10,
+    fontWeight: '800' as const,
+    letterSpacing: 1,
+  },
+  heroTime: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  heroTimeText: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    fontWeight: '500' as const,
+  },
+  heroTitle: {
+    fontSize: 24,
+    fontWeight: '800' as const,
+    color: Colors.text,
+    letterSpacing: -0.6,
+    lineHeight: 30,
+  },
+  heroDescription: {
+    fontSize: 15,
+    color: Colors.textSub,
+    lineHeight: 22,
+  },
+  heroMeta: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  metaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: Colors.surface,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  metaChipText: {
+    fontSize: 11,
+    color: Colors.textSub,
+    fontWeight: '500' as const,
+  },
+  trustBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: Colors.accentDim,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  trustText: {
+    fontSize: 10,
+    fontWeight: '700' as const,
+    color: Colors.accent,
+  },
+  heroActions: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingTop: 4,
+  },
+  upvoteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: Colors.accentDim,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.accent + '30',
+  },
+  upvoteText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.accent,
+  },
+  downvoteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    backgroundColor: Colors.error + '10',
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.error + '30',
+  },
+  downvoteText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: Colors.error,
+  },
+  shareBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(29,161,242,0.08)',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(29,161,242,0.25)',
+  },
+  shareBtnText: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: '#1DA1F2',
+  },
+  commentsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  commentsHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  commentsTitle: {
+    fontSize: 15,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  loadingComments: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 24,
+  },
+  loadingText: {
+    fontSize: 13,
+    color: Colors.textMuted,
+  },
+  emptyComments: {
+    alignItems: 'center',
+    paddingVertical: 28,
+    gap: 8,
+  },
+  emptyCommentsEmoji: {
+    fontSize: 32,
+  },
+  emptyCommentsText: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: 'center' as const,
+    paddingHorizontal: 40,
+    lineHeight: 19,
+  },
+  commentBubble: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  commentAuthorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  anonAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.surfaceHigh,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  userAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: Colors.accentDim,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  commentAuthor: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: Colors.text,
+  },
+  commentAuthorAnon: {
+    color: Colors.textSub,
+    fontStyle: 'italic' as const,
+  },
+  commentTime: {
+    fontSize: 11,
+    color: Colors.textMuted,
+  },
+  commentText: {
+    fontSize: 14,
+    color: Colors.textSub,
+    lineHeight: 20,
+  },
+  inputBar: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    backgroundColor: Colors.surface,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    gap: 8,
+  },
+  anonToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingBottom: 6,
+  },
+  commentInput: {
+    flex: 1,
+    backgroundColor: Colors.surfaceHigh,
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 10,
+    color: Colors.text,
+    fontSize: 14,
+    maxHeight: 100,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  sendBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  sendBtnDisabled: {
+    opacity: 0.4,
+  },
+  errorContainer: {
+    flex: 1,
+    backgroundColor: Colors.bg,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  errorEmoji: {
+    fontSize: 48,
+  },
+  errorTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: Colors.text,
+  },
+  errorBtn: {
+    backgroundColor: Colors.accent,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 14,
+    marginTop: 8,
+  },
+  errorBtnText: {
+    fontSize: 14,
+    fontWeight: '700' as const,
+    color: Colors.bg,
+  },
+});
 
   return (
     <View style={styles.container}>

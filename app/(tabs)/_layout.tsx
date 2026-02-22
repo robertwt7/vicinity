@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { Map, Zap } from 'lucide-react-native';
+import { Map, Zap, User } from 'lucide-react-native';
 import Colors from '@/constants/colors';
 
 export default function TabLayout() {
@@ -37,6 +37,13 @@ export default function TabLayout() {
         options={{
           title: 'Nearby',
           tabBarIcon: ({ color, size }) => <Zap color={color} size={size} strokeWidth={2} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ color, size }) => <User color={color} size={size} strokeWidth={2} />,
         }}
       />
     </Tabs>
